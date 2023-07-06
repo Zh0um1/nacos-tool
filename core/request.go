@@ -7,13 +7,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/imroc/req/v3"
 	"nacos/core/flag"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
 
 var client *req.Client
-
-var token string
 
 func InitRequest() {
 	client = req.C()
@@ -24,20 +24,12 @@ func InitRequest() {
 	}).SetTLSHandshakeTimeout(time.Duration(5) * time.Second)
 	client.SetCommonContentType("application/x-www-form-urlencoded")
 
-	var err error
-	token, err = generateToken()
-	if err != nil {
-		fmt.Println("generate token failed, error: ", err)
-		fmt.Println("try use serverIdentity to bypass auth")
-		client.SetCommonHeader("serverIdentity", "security")
-	} else {
-		client.SetCommonHeader("accessToken", token)
-	}
-
 	if flag.Proxy != "" {
 		client.SetProxyURL(flag.Proxy)
 	}
-	client.SetBaseURL(flag.Target + "/nacos")
+	baseUrl, _ := url.JoinPath(flag.Target, "/nacos")
+	client.SetBaseURL(baseUrl)
+	setAuthHeader()
 }
 
 type ConfigItem struct {
@@ -72,6 +64,30 @@ type NamespaceResp struct {
 	Code    int             `json:"code"`
 	Message interface{}     `json:"message,omitempty"`
 	Data    []NamespaceItem `json:"data"`
+}
+
+func setAuthHeader() {
+	api := "/v1/auth/users?pageNo=1&pageSize=10&search=accurate"
+	token, _ := generateToken()
+	client.SetCommonHeader("accessToken", token)
+	resp, err := client.R().Get(api)
+	if err != nil {
+		fmt.Println("set auth header error, ", err)
+		os.Exit(1)
+	}
+	if resp.StatusCode == 200 && strings.Contains(resp.String(), "pageItems") {
+		fmt.Println("set access token header")
+		return
+	}
+	client.Headers.Del("accessToken")
+	client.SetCommonHeader("serverIdentity", "security")
+	resp, err = client.R().Get(api)
+	if resp.StatusCode == 200 && strings.Contains(resp.String(), "pageItems") {
+		fmt.Println("set server identity header")
+		return
+	}
+	fmt.Println("set auth header failed ")
+	os.Exit(0)
 }
 
 func generateToken() (string, error) {
