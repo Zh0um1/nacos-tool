@@ -1,0 +1,56 @@
+name: Go Build and Release
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        go-version: [1.19]
+        platform: [linux/amd64, linux/arm64, windows/amd64, darwin/amd64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Build
+        run: go -ldflags "-s -w" build -o nacos-${{ matrix.platform }}-${{ matrix.go-version }}
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nacos-${{ matrix.platform }}-${{ matrix.go-version }}
+          path: nacos-${{ matrix.platform }}-${{ matrix.go-version }}
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v0.1
+          release_name: Release v0.1
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        id: upload_release_asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: nacos-${{ matrix.platform }}-${{ matrix.go-version }}
+          asset_name: nacos-${{ matrix.platform }}-${{ matrix.go-version }}
+          asset_content_type: application/octet-stream
